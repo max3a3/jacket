@@ -1,3 +1,4 @@
+#import "Basic";
 // Native WGL setup owns a temporary window/DC/context, never the caller's window.
 create :: (window: W.HWND, share: W.HGLRC, major: s32, minor: s32,
            compatibility: bool, debug: bool, wanted_samples: s32) -> W.HGLRC, W.HDC, s32 {
@@ -96,11 +97,11 @@ create :: (window: W.HWND, share: W.HGLRC, major: s32, minor: s32,
         }
 
         if W.DescribePixelFormat(dc, format, cast(u32) size_of(W.PIXELFORMATDESCRIPTOR), *descriptor) == 0 return null, null, 0;
-        if !valid_descriptor(descriptor) return null, null, 0;
+        if !valid_format(dc, format, descriptor, query) return null, null, 0;
         if W.SetPixelFormat(dc, format, *descriptor) == 0 return null, null, 0;
     } else {
         if W.DescribePixelFormat(dc, format, cast(u32) size_of(W.PIXELFORMATDESCRIPTOR), *descriptor) == 0 return null, null, 0;
-        if !valid_descriptor(descriptor) return null, null, 0;
+        if !valid_format(dc, format, descriptor, query) return null, null, 0;
     }
 
     actual_samples: s32;
@@ -189,6 +190,7 @@ choose_extended :: (dc: W.HDC, choose: Choose, multisample: bool, samples: s32, 
     return format;
 }
 
+
 pixel_descriptor :: () -> W.PIXELFORMATDESCRIPTOR {
     result: W.PIXELFORMATDESCRIPTOR;
     result.nSize = cast(s16) size_of(W.PIXELFORMATDESCRIPTOR);
@@ -200,6 +202,22 @@ pixel_descriptor :: () -> W.PIXELFORMATDESCRIPTOR {
     result.cDepthBits = 24;
 
     return result;
+}
+
+// Extended (multisampled) formats are often reported incompletely by
+// DescribePixelFormat, so prefer the pixel-format extension's own attributes.
+valid_format :: (dc: W.HDC, format: s32, descriptor: W.PIXELFORMATDESCRIPTOR, query: Query) -> bool {
+    if !query return valid_descriptor(descriptor);
+
+    names: [4] s32 = .[0x2001, 0x2010, 0x2011, 0x2013];
+    values: [4] s32;
+    if query(dc, format, 0, 4, names.data, values.data) == 0 {
+        return false;
+    }
+    if !values[0] || !values[1] || !values[2] || values[3] != 0x202B {
+        return false;
+    }
+    return true;
 }
 
 valid_descriptor :: (descriptor: W.PIXELFORMATDESCRIPTOR) -> bool {
